@@ -1,15 +1,14 @@
 {
-  "domain": "blueprint",
-  "name": "Blueprint",
-  "documentation": "https://github.com/custom-components/blueprint",
+  "domain": "ttlock",
+  "name": "TTlock",
+  "documentation": "https://github.com/tonyldo/lock.ttlock",
   "dependencies": [],
-  "config_flow": true,
+  "config_flow": false,
   "codeowners": [
-    "@ludeeus"
+    "@tonyldo"
   ],
   "requirements": [
-    "sampleclient",
     "integrationhelper"
   ],
-  "homeassistant": "0.96.0"
+  "homeassistant": "0.106.3"
 }

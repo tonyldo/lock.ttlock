@@ -1,74 +1,63 @@
 """
-Component to integrate with blueprint.
+Component to integrate with TTlock API.
 
 For more details about this component, please refer to
-https://github.com/custom-components/blueprint
+https://github.com/tonyldo/lock.ttlock
 """
 import os
+import datetime
 from datetime import timedelta
+from datetime import datetime
+from datetime import date
+from datetime import time
+import requests
 import logging
+import json
 import voluptuous as vol
 from homeassistant import config_entries
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import discovery
 from homeassistant.util import Throttle
 
-from sampleclient.client import Client
 from integrationhelper.const import CC_STARTUP_VERSION
 
 from .const import (
-    CONF_BINARY_SENSOR,
-    CONF_ENABLED,
-    CONF_NAME,
-    CONF_PASSWORD,
-    CONF_SENSOR,
-    CONF_SWITCH,
-    CONF_USERNAME,
+    CONF_CLIENT_ID,
+    CONF_API_URI,
+    CONF_CLIENT_SECRET,
+    CONF_ACCESS_TOKEN,
+    CONF_REFRESH_TOKEN,
     DEFAULT_NAME,
-    DOMAIN_DATA,
     DOMAIN,
     ISSUE_URL,
     PLATFORMS,
     REQUIRED_FILES,
     VERSION,
+    CONF_TOKEN_FILENAME,
+    CONF_API_OAUTH_RESOURCE,
+    CONF_API_GATEWAY_RESOURCE,
 )
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=30)
 
 _LOGGER = logging.getLogger(__name__)
 
-BINARY_SENSOR_SCHEMA = vol.Schema(
-    {
-        vol.Optional(CONF_ENABLED, default=True): cv.boolean,
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-    }
-)
-
-SENSOR_SCHEMA = vol.Schema(
-    {
-        vol.Optional(CONF_ENABLED, default=True): cv.boolean,
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-    }
-)
-
-SWITCH_SCHEMA = vol.Schema(
-    {
-        vol.Optional(CONF_ENABLED, default=True): cv.boolean,
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-    }
-)
-
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
             {
-                vol.Optional(CONF_USERNAME): cv.string,
-                vol.Optional(CONF_PASSWORD): cv.string,
-                vol.Optional(CONF_BINARY_SENSOR): vol.All(
-                    cv.ensure_list, [BINARY_SENSOR_SCHEMA]
-                ),
-                vol.Optional(CONF_SENSOR): vol.All(cv.ensure_list, [SENSOR_SCHEMA]),
-                vol.Optional(CONF_SWITCH): vol.All(cv.ensure_list, [SWITCH_SCHEMA]),
+                vol.Required(CONF_CLIENT_ID): cv.string,
+                vol.Required(CONF_CLIENT_SECRET): cv.string,
+                vol.Required(CONF_ACCESS_TOKEN): cv.string,
+                vol.Required(CONF_REFRESH_TOKEN): cv.string,
+                vol.Optional(CONF_API_URI, default="https://api.ttlock.com"): cv.string,
+                vol.Optional(
+                    CONF_API_OAUTH_RESOURCE, default="oauth2/token"
+                ): cv.string,
+                vol.Optional(
+                    CONF_API_GATEWAY_RESOURCE, default="v3/gateway/list"
+                ): cv.string,
+                vol.Optional(CONF_TOKEN_FILENAME, default="token.json"): cv.string,
             }
         )
     },
@@ -87,21 +76,13 @@ async def async_setup(hass, config):
         CC_STARTUP_VERSION.format(name=DOMAIN, version=VERSION, issue_link=ISSUE_URL)
     )
 
-    # Check that all required files are present
-    file_check = await check_files(hass)
-    if not file_check:
-        return False
-
     # Create DATA dict
-    hass.data[DOMAIN_DATA] = {}
+    hass.data[DOMAIN] = {}
 
-    # Get "global" configuration.
-    username = config[DOMAIN].get(CONF_USERNAME)
-    password = config[DOMAIN].get(CONF_PASSWORD)
+    hass.data[DOMAIN] = TTlock(hass, config)
 
-    # Configure the client.
-    client = Client(username, password)
-    hass.data[DOMAIN_DATA]["client"] = BlueprintData(hass, client)
+    # Check the token validated
+    hass.data[DOMAIN].check_token_file()
 
     # Load platforms
     for platform in PLATFORMS:
@@ -114,10 +95,6 @@ async def async_setup(hass, config):
 
         for entry in platform_config:
             entry_config = entry
-
-            # If entry is not enabled, skip.
-            if not entry_config[CONF_ENABLED]:
-                continue
 
             hass.async_create_task(
                 discovery.async_load_platform(
@@ -132,113 +109,105 @@ async def async_setup(hass, config):
     return True
 
 
-async def async_setup_entry(hass, config_entry):
-    """Set up this integration using UI."""
-    conf = hass.data.get(DOMAIN_DATA)
-    if config_entry.source == config_entries.SOURCE_IMPORT:
-        if conf is None:
-            hass.async_create_task(
-                hass.config_entries.async_remove(config_entry.entry_id)
-            )
-        return False
+class TTlock:
+    """This class handle communication with the TTlock API."""
 
-    # Print startup message
-    _LOGGER.info(
-        CC_STARTUP_VERSION.format(name=DOMAIN, version=VERSION, issue_link=ISSUE_URL)
-    )
-
-    # Check that all required files are present
-    file_check = await check_files(hass)
-    if not file_check:
-        return False
-
-    # Create DATA dict
-    hass.data[DOMAIN_DATA] = {}
-
-    # Get "global" configuration.
-    username = config_entry.data.get(CONF_USERNAME)
-    password = config_entry.data.get(CONF_PASSWORD)
-
-    # Configure the client.
-    client = Client(username, password)
-    hass.data[DOMAIN_DATA]["client"] = BlueprintData(hass, client)
-
-    # Add binary_sensor
-    hass.async_add_job(
-        hass.config_entries.async_forward_entry_setup(config_entry, "binary_sensor")
-    )
-
-    # Add sensor
-    hass.async_add_job(
-        hass.config_entries.async_forward_entry_setup(config_entry, "sensor")
-    )
-
-    # Add switch
-    hass.async_add_job(
-        hass.config_entries.async_forward_entry_setup(config_entry, "switch")
-    )
-
-    return True
-
-
-class BlueprintData:
-    """This class handle communication and stores the data."""
-
-    def __init__(self, hass, client):
+    def __init__(self, hass, config):
         """Initialize the class."""
-        self.hass = hass
-        self.client = client
+        # Get "global" configuration.
+        self._hass = hass
+        self.client_id = config[DOMAIN].get(CONF_CLIENT_ID)
+        self.client_secret = config[DOMAIN].get(CONF_CLIENT_SECRET)
+        self.access_token = config[DOMAIN].get(CONF_ACCESS_TOKEN)
+        self.refresh_token = config[DOMAIN].get(CONF_REFRESH_TOKEN)
+        self.api_uri = config[DOMAIN].get(CONF_API_URI)
+        self.api_oauth_resource = config[DOMAIN].get(CONF_API_OAUTH_RESOURCE)
+        self.api_gateway_resource = config[DOMAIN].get(CONF_API_GATEWAY_RESOURCE)
+        self.redirect_url = f"{hass.config.api.base_url}/"
+        self.component_path = f"{hass.config.path()}/custom_components/{DOMAIN}/"
+        self._token_file = config[DOMAIN].get(CONF_TOKEN_FILENAME)
+        self.gateways = ""
+        self.locks = ""
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def update_data(self):
         """Update data."""
         # This is where the main logic to update platform data goes.
         try:
-            data = self.client.get_data()
-            self.hass.data[DOMAIN_DATA]["data"] = data
+            self.check_token_file()
+
         except Exception as error:  # pylint: disable=broad-except
             _LOGGER.error("Could not update data - %s", error)
 
-
-async def check_files(hass):
-    """Return bool that indicates if all files are present."""
-    # Verify that the user downloaded all files.
-    base = f"{hass.config.path()}/custom_components/{DOMAIN}/"
-    missing = []
-    for file in REQUIRED_FILES:
-        fullpath = "{}{}".format(base, file)
+    def check_token_file(self):
+        """Token validate verify."""
+        fullpath = "{}{}".format(self.component_path, self._token_file)
         if not os.path.exists(fullpath):
-            missing.append(file)
+            _LOGGER.info("Token File ({}) not exist.".format(self._token_file))
+            self.refresh_access_token()
+        else:
+            will_expire = False
+            with open(self._token_file) as json_file:
+                data = json.load(json_file)
+                expire_date = datetime.fromtimestamp(data["expire_date"])
+                today = datetime.fromtimestamp(time.time())
+                if (expire_date - today).delta < 7:
+                    _LOGGER.info("Access token will expire soon.")
+                    will_expire = True
+            if will_expire:
+                self.refresh_access_token()
 
-    if missing:
-        _LOGGER.critical("The following files are missing: %s", str(missing))
-        returnvalue = False
-    else:
-        returnvalue = True
-
-    return returnvalue
-
-
-async def async_remove_entry(hass, config_entry):
-    """Handle removal of an entry."""
-    try:
-        await hass.config_entries.async_forward_entry_unload(
-            config_entry, "binary_sensor"
+    def get_gateway_from_account(self):
+        """list of gateways"""
+        _headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        _request = requests.post(
+            "https://{}/{}?client_id={}&accessToken={}&pageNo=1&pageSize=20&date={}".format(
+                self.api_uri,
+                self.api_gateway_resource,
+                self.client_id,
+                self.access_token,
+                time.time(),
+            ),
+            headers=_headers,
         )
-        _LOGGER.info(
-            "Successfully removed binary_sensor from the blueprint integration"
+        self.gateways = _request.json()
+
+    def get_locks_from_gateway(self):
+        """list of locks"""
+        for gateway in self.gateways["list"]:
+            _headers = {"Content-Type": "application/x-www-form-urlencoded"}
+            _request = requests.post(
+                "https://{}/{}?client_id={}&accessToken={}&gatewayId={}&date={}".format(
+                    self.api_uri,
+                    self.api_gateway_resource,
+                    self.client_id,
+                    self.access_token,
+                    gateway["gatewayId"],
+                    time.time(),
+                ),
+                headers=_headers,
+            )
+            self.locks = _request.json()
+
+    def refresh_access_token(self):
+        """if token will expire, refresh"""
+        _LOGGER.info("Generating a new Access token.")
+        _headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        _request = requests.post(
+            "https://{}/{}?client_id={}&client_secret={}&grant_type=refresh_token&refresh_token={}&redirect_uri={}".format(
+                self.api_uri,
+                self.api_oauth_resource,
+                self.client_id,
+                self.client_secret,
+                self.refresh_token,
+                self.redirect_url,
+            ),
+            headers=_headers,
         )
-    except ValueError:
-        pass
-
-    try:
-        await hass.config_entries.async_forward_entry_unload(config_entry, "sensor")
-        _LOGGER.info("Successfully removed sensor from the blueprint integration")
-    except ValueError:
-        pass
-
-    try:
-        await hass.config_entries.async_forward_entry_unload(config_entry, "switch")
-        _LOGGER.info("Successfully removed switch from the blueprint integration")
-    except ValueError:
-        pass
+        _response = _request.json()
+        _expire_date = datetime.fromtimestamp(
+            time.time() + (_response["expires_in"] * 1000)
+        )
+        _response["expire_date"] = _expire_date
+        with open(self._token_file, "w") as outfile:
+            json.dump(_response, outfile)

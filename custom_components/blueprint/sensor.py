@@ -1,36 +1,54 @@
 """Sensor platform for blueprint."""
 from homeassistant.helpers.entity import Entity
-from .const import ATTRIBUTION, DEFAULT_NAME, DOMAIN_DATA, ICON, DOMAIN
+from .const import ATTRIBUTION, DEFAULT_NAME, ICON, DOMAIN
 
 
-async def async_setup_platform(
-    hass, config, async_add_entities, discovery_info=None
-):  # pylint: disable=unused-argument
-    """Setup sensor platform."""
-    async_add_entities([BlueprintSensor(hass, discovery_info)], True)
+SONOFF_SENSORS_MAP = {
+    "lock_battery": {"eid": "battery", "uom": "%", "icon": "mdi:battery-outline"},
+    "gateway_online ": {"eid": "online", "icon": "mdi:lan-connect"},
+}
+
+
+async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+    entities = []
+    for device in hass.data[DOMAIN].get_devices(force_update=False):
+        # as far as i know only 1-switch devices seem to have sensor-like capabilities
+
+        if "params" not in device.keys():
+            continue  # this should never happen... but just in case
+
+        for sensor in SONOFF_SENSORS_MAP.keys():
+            if (
+                device["params"].get(sensor)
+                and device["params"].get(sensor) != "unavailable"
+            ):
+                entity = TTlockSensor(hass, device, sensor)
+                entities.append(entity)
+
+    if len(entities):
+        async_add_entities(entities, update_before_add=False)
 
 
 async def async_setup_entry(hass, config_entry, async_add_devices):
     """Setup sensor platform."""
-    async_add_devices([BlueprintSensor(hass, {})], True)
+    async_add_devices([TTlockSensor(hass, {})], True)
 
 
-class BlueprintSensor(Entity):
+class TTlockSensor(Entity):
     """blueprint Sensor class."""
 
-    def __init__(self, hass, config):
+    def __init__(self, hass, device, sensor=None):
         self.hass = hass
         self.attr = {}
         self._state = None
-        self._name = config.get("name", DEFAULT_NAME)
 
     async def async_update(self):
         """Update the sensor."""
         # Send update "signal" to the component
-        await self.hass.data[DOMAIN_DATA]["client"].update_data()
+        await self.hass.data[DOMAIN].update_data()
 
         # Get new data (if any)
-        updated = self.hass.data[DOMAIN_DATA]["data"].get("data", {})
+        updated = self.hass.data[DOMAIN]["data"].get("data", {})
 
         # Check the data and update the value.
         if updated.get("static") is None:
@@ -46,9 +64,7 @@ class BlueprintSensor(Entity):
     @property
     def unique_id(self):
         """Return a unique ID to use for this sensor."""
-        return (
-            "0717a0cd-745c-48fd"
-        )  # Don't hard code this, use something from the device/service.
+        return ""  # Don't hard code this, use something from the device/service.
 
     @property
     def device_info(self):
@@ -61,7 +77,7 @@ class BlueprintSensor(Entity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return self._name
+        return ""
 
     @property
     def state(self):
