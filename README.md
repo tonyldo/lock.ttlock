@@ -42,8 +42,10 @@ custom_components/ttlock/switch.py
 
 ```yaml
 ttlock:
-  username: my_username
-  password: my_password
+  client_id:
+  client_secret:
+  access_token:
+  refresh_token:
 ```
 
 ## Configuration options
