@@ -129,8 +129,7 @@ class TTlock:
             CONF_API_GATEWAY_LOCKS_RESOURCE
         )
         self.redirect_url = f"{hass.config.api.base_url}/"
-        self.component_path = f"{hass.config.path()}/custom_components/{DOMAIN}/"
-        self._token_file = config[DOMAIN].get(CONF_TOKEN_FILENAME)
+        self.full_path_token_file = f"{hass.config.path()}/custom_components/{DOMAIN}/{config[DOMAIN].get(CONF_TOKEN_FILENAME)}"
         self.gateways = ""
         self.locks = ""
 
@@ -139,19 +138,17 @@ class TTlock:
         # This is where the main logic to update platform data goes.
         try:
             self.check_token_file()
-
-        except Exception as error:  # pylint: disable=broad-except
-            _LOGGER.error("Could not update data - %s", error)
+        except Exception as error:
+            _LOGGER.info(repr(error))
 
     def check_token_file(self):
         """Token validate verify."""
-        fullpath = "{}{}".format(self.component_path, self._token_file)
-        if not os.path.exists(fullpath):
-            _LOGGER.info("Token File ({}) not exist.".format(self._token_file))
+        if not os.path.exists(self.full_path_token_file):
+            _LOGGER.info("Token File ({}) not exist.".format(self.full_path_token_file))
             self.refresh_access_token()
         else:
             will_expire = False
-            with open(self._token_file) as json_file:
+            with open(self.full_path_token_file) as json_file:
                 data = json.load(json_file)
                 expire_date = datetime.fromtimestamp(data["expire_date"])
                 today = datetime.fromtimestamp(time.time())
@@ -161,23 +158,27 @@ class TTlock:
             if will_expire:
                 self.refresh_access_token()
 
-    def get_gateway_from_account(self):
+    def get_gateway_from_account(self,_pageNo=1):
         """list of gateways"""
-        _url_request = "https://{}/{}?client_id={}&accessToken={}&pageNo=1&pageSize=20&date={}".format(
+        _url_request = "https://{}/{}?client_id={}&accessToken={}&pageNo={}&pageSize=20&date={}".format(
             self.api_uri,
             self.api_gateway_resource,
             self.client_id,
             self.access_token,
+            _pageNo,
             time.time(),
         )
+        _response = self.send_resources_request(_url_request).json()
 
-        _request = self.send_resources_request(_url_request)
-        self.gateways = _request.json()
+        if len(_response["list"])==0:
+            return _response["list"]
+        else:
+            return _response["list"] + self.get_gateway_from_account(_pageNo=_pageNo+1)
 
     def get_locks_from_gateway(self):
         """list of locks"""
-        for gateway in self.gateways["list"]:
-            _url_request = "https://{}/{}?client_id={}&accessToken={}&gatewayId={}&date={}".format(
+        for gateway in self.gateways:
+            _url_request = "https://{}/{}?clientId={}&accessToken={}&gatewayId={}&date={}".format(
                 self.api_uri,
                 self.api_gateway_locks_resource,
                 self.client_id,
@@ -217,11 +218,11 @@ class TTlock:
         _response["expire_date"] = _expire_date
 
         try:
-            os.remove(self._token_file)
+            os.remove(self.full_path_token_file)
         except:
             _LOGGER.info("Error while deleting Token file")
 
-        with open(self._token_file, "w") as outfile:
+        with open(self.full_path_token_file, "w") as outfile:
             json.dump(_response, outfile)
 
     def send_request(self, _url_request):
