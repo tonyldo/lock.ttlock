@@ -52,33 +52,10 @@ ttlock:
 
 Key | Type | Required | Description
 -- | -- | -- | --
-`username` | `string` | `False` | Username for the client.
-`password` | `string` | `False` | Password for the client.
-`binary_sensor` | `list` | `False` | Configuration for the `binary_sensor` platform.
-`sensor` | `list` | `False` | Configuration for the `sensor` platform.
-`switch` | `list` | `False` | Configuration for the `switch` platform.
-
-### Configuration options for `binary_sensor` list
-
-Key | Type | Required | Default | Description
--- | -- | -- | -- | --
-`enabled` | `boolean` | `False` | `True` | Boolean to enable/disable the platform.
-`name` | `string` | `False` | `blueprint` | Custom name for the entity.
-
-### Configuration options for `sensor` list
-
-Key | Type | Required | Default | Description
--- | -- | -- | -- | --
-`enabled` | `boolean` | `False` | `True` | Boolean to enable/disable the platform.
-`name` | `string` | `False` | `blueprint` | Custom name for the entity.
-
-
-### Configuration options for `switch` list
-
-Key | Type | Required | Default | Description
--- | -- | -- | -- | --
-`enabled` | `boolean` | `False` | `True` | Boolean to enable/disable the platform.
-`name` | `string` | `False` | `blueprint` | Custom name for the entity.
+`client_id` | `string` | `True` | The app_id which is assigned by system when you create an application.
+`client_secret` | `string` | `True` | The app_secret which is assigned by system when you create an application.
+`access_token` | `string` | `True` | Access token.
+`refresh_token` | `string` | `True` | Refresh token.
 
 ## Contributions are welcome!
 
