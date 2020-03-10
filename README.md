@@ -9,7 +9,7 @@
 Platform | Description
 -- | --
 `sensor` | Show info from ttlock API.
-`lock` | control ttlock lock devices.
+`lock` | Control ttlock lock devices.
 
 ![example][exampleimg]
 
@@ -18,43 +18,32 @@ Platform | Description
 1. Using the tool of choice open the directory (folder) for your HA configuration (where you find `configuration.yaml`).
 2. If you do not have a `custom_components` directory (folder) there, you need to create it.
 3. In the `custom_components` directory (folder) create a new folder called `blueprint`.
-4. Download _all_ the files from the `custom_components/blueprint/` directory (folder) in this repository.
+4. Download _all_ the files from the `custom_components/ttlock/` directory (folder) in this repository.
 5. Place the files you downloaded in the new directory (folder) you created.
 6. Restart Home Assistant
-7. Choose:
-   - Add `blueprint:` to your HA configuration.
-   - In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Blueprint"
+7. Add `ttlock:` to your HA configuration.
 
 Using your HA configuration directory (folder) as a starting point you should now also have this:
 
 ```text
-custom_components/blueprint/.translations/en.json
-custom_components/blueprint/.translations/nb.json
-custom_components/blueprint/.translations/sensor.nb.json
-custom_components/blueprint/__init__.py
-custom_components/blueprint/binary_sensor.py
-custom_components/blueprint/config_flow.py
-custom_components/blueprint/const.py
-custom_components/blueprint/manifest.json
-custom_components/blueprint/sensor.py
-custom_components/blueprint/switch.py
+custom_components/ttlock/.translations/en.json
+custom_components/ttlock/.translations/nb.json
+custom_components/ttlock/.translations/sensor.nb.json
+custom_components/ttlock/__init__.py
+custom_components/ttlock/binary_sensor.py
+custom_components/ttlock/config_flow.py
+custom_components/ttlock/const.py
+custom_components/ttlock/manifest.json
+custom_components/ttlock/sensor.py
+custom_components/ttlock/switch.py
 ```
 
 ## Example configuration.yaml
 
 ```yaml
-blueprint:
+ttlock:
   username: my_username
   password: my_password
-  binary_sensor:
-    - enabled: true
-      name: My custom name
-  sensor:
-    - enabled: true
-      name: My custom name
-  switch:
-    - enabled: true
-      name: My custom name
 ```
 
 ## Configuration options
