@@ -1,10 +1,7 @@
 # TTLock
 
 [![License][license-shield]](LICENSE.md)
-
 [![hacs][hacsbadge]][hacs]
-![Project Maintenance][maintenance-shield]
-
 [![Community Forum][forum-shield]][forum]
 
 **This component will set up the following platforms.**
