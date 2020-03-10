@@ -233,12 +233,10 @@ class TTlock:
         if _request.status_code not in GOOD_HTTP_CODES:
             raise Exception("HTTP_ERROR", _request.status_code)
         else:
-            if (
-                _request.json()["errcode"]
-                and _request.json()["errcode"] in TOKEN_ERROR_CODES
-            ):
-                raise PermissionError(_request.json()["errcode"])
-            else:
-                raise Exception("API_ERROR", _request.json()["errcode"])
-
+            if _request.json()["errcode"]
+                if _request.json()["errcode"] in TOKEN_ERROR_CODES:
+                    raise PermissionError("API_TOKEN_ERROR",_request.json()["errcode"])
+                else:
+                    raise Exception("API_ERROR", _request.json()["errcode"])
+                    
         return _request.json()
