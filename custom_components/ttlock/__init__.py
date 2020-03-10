@@ -4,38 +4,36 @@ Component to integrate with TTlock API.
 For more details about this component, please refer to
 https://github.com/tonyldo/lock.ttlock
 """
-import os
 import datetime
-from datetime import timedelta
-from datetime import datetime
-from datetime import date
-from datetime import time
-import requests
-import logging
 import json
+import logging
+import os
+from datetime import datetime, time, timedelta
+
+import homeassistant.helpers.config_validation as cv
+import requests
 import voluptuous as vol
 from homeassistant import config_entries
-import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import discovery
 from homeassistant.util import Throttle
-
 from integrationhelper.const import CC_STARTUP_VERSION
 
 from .const import (
-    CONF_CLIENT_ID,
-    CONF_API_URI,
-    CONF_CLIENT_SECRET,
     CONF_ACCESS_TOKEN,
+    CONF_API_GATEWAY_LOCKS_RESOURCE,
+    CONF_API_GATEWAY_RESOURCE,
+    CONF_API_OAUTH_RESOURCE,
+    CONF_API_URI,
+    CONF_CLIENT_ID,
+    CONF_CLIENT_SECRET,
     CONF_REFRESH_TOKEN,
+    CONF_TOKEN_FILENAME,
     DEFAULT_NAME,
     DOMAIN,
     ISSUE_URL,
     PLATFORMS,
     REQUIRED_FILES,
     VERSION,
-    CONF_TOKEN_FILENAME,
-    CONF_API_OAUTH_RESOURCE,
-    CONF_API_GATEWAY_RESOURCE,
 )
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=30)
@@ -57,6 +55,9 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(
                     CONF_API_GATEWAY_RESOURCE, default="v3/gateway/list"
                 ): cv.string,
+                vol.Optional(
+                    CONF_API_GATEWAY_LOCKS_RESOURCE, default="v3/gateway/listLock"
+                ): cv.string,
                 vol.Optional(CONF_TOKEN_FILENAME, default="token.json"): cv.string,
             }
         )
@@ -76,13 +77,14 @@ async def async_setup(hass, config):
         CC_STARTUP_VERSION.format(name=DOMAIN, version=VERSION, issue_link=ISSUE_URL)
     )
 
-    # Create DATA dict
-    hass.data[DOMAIN] = {}
-
     hass.data[DOMAIN] = TTlock(hass, config)
 
     # Check the token validated
-    hass.data[DOMAIN].check_token_file()
+    try:
+        hass.data[DOMAIN].check_token_file()
+    except Exception as e:
+        _LOGGER.error("Erro while setup ttlock component: {}".format(e.__cause__))
+        return False
 
     # Load platforms
     for platform in PLATFORMS:
@@ -123,13 +125,15 @@ class TTlock:
         self.api_uri = config[DOMAIN].get(CONF_API_URI)
         self.api_oauth_resource = config[DOMAIN].get(CONF_API_OAUTH_RESOURCE)
         self.api_gateway_resource = config[DOMAIN].get(CONF_API_GATEWAY_RESOURCE)
+        self.api_gateway_locks_resource = config[DOMAIN].get(
+            CONF_API_GATEWAY_LOCKS_RESOURCE
+        )
         self.redirect_url = f"{hass.config.api.base_url}/"
         self.component_path = f"{hass.config.path()}/custom_components/{DOMAIN}/"
         self._token_file = config[DOMAIN].get(CONF_TOKEN_FILENAME)
         self.gateways = ""
         self.locks = ""
 
-    @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def update_data(self):
         """Update data."""
         # This is where the main logic to update platform data goes.
@@ -159,55 +163,82 @@ class TTlock:
 
     def get_gateway_from_account(self):
         """list of gateways"""
-        _headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        _request = requests.post(
-            "https://{}/{}?client_id={}&accessToken={}&pageNo=1&pageSize=20&date={}".format(
-                self.api_uri,
-                self.api_gateway_resource,
-                self.client_id,
-                self.access_token,
-                time.time(),
-            ),
-            headers=_headers,
+        _url_request = "https://{}/{}?client_id={}&accessToken={}&pageNo=1&pageSize=20&date={}".format(
+            self.api_uri,
+            self.api_gateway_resource,
+            self.client_id,
+            self.access_token,
+            time.time(),
         )
+
+        _request = self.send_resources_request(_url_request)
         self.gateways = _request.json()
 
     def get_locks_from_gateway(self):
         """list of locks"""
         for gateway in self.gateways["list"]:
-            _headers = {"Content-Type": "application/x-www-form-urlencoded"}
-            _request = requests.post(
-                "https://{}/{}?client_id={}&accessToken={}&gatewayId={}&date={}".format(
-                    self.api_uri,
-                    self.api_gateway_resource,
-                    self.client_id,
-                    self.access_token,
-                    gateway["gatewayId"],
-                    time.time(),
-                ),
-                headers=_headers,
+            _url_request = "https://{}/{}?client_id={}&accessToken={}&gatewayId={}&date={}".format(
+                self.api_uri,
+                self.api_gateway_locks_resource,
+                self.client_id,
+                self.access_token,
+                gateway["gatewayId"],
+                time.time(),
             )
+            _request = self.send_resources_request(_url_request)
             self.locks = _request.json()
+
+    def send_resources_request(self, _url_request):
+        try:
+            return self.send_request(_url_request)
+        except PermissionError as error:
+            _LOGGER.info(repr(error))
+            self.refresh_access_token()
 
     def refresh_access_token(self):
         """if token will expire, refresh"""
         _LOGGER.info("Generating a new Access token.")
-        _headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        _request = requests.post(
-            "https://{}/{}?client_id={}&client_secret={}&grant_type=refresh_token&refresh_token={}&redirect_uri={}".format(
-                self.api_uri,
-                self.api_oauth_resource,
-                self.client_id,
-                self.client_secret,
-                self.refresh_token,
-                self.redirect_url,
-            ),
-            headers=_headers,
+        _url_request = "https://{}/{}?client_id={}&client_secret={}&grant_type=refresh_token&refresh_token={}&redirect_uri={}".format(
+            self.api_uri,
+            self.api_oauth_resource,
+            self.client_id,
+            self.client_secret,
+            self.refresh_token,
+            self.redirect_url,
         )
-        _response = _request.json()
+
+        _response = self.send_request(_url_request)
+
+        self.access_token = _response["access_token"]
+        self.refresh_token = _response["refresh_token"]
         _expire_date = datetime.fromtimestamp(
             time.time() + (_response["expires_in"] * 1000)
         )
         _response["expire_date"] = _expire_date
+
+        try:
+            os.remove(self._token_file)
+        except:
+            _LOGGER.info("Error while deleting Token file")
+
         with open(self._token_file, "w") as outfile:
             json.dump(_response, outfile)
+
+    def send_request(self, _url_request):
+        from integrationhelper.const import GOOD_HTTP_CODES
+
+        TOKEN_ERROR_CODES = [10003]
+        _headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        _request = requests.post(_url_request, headers=_headers)
+        if _request.status_code not in GOOD_HTTP_CODES:
+            raise Exception("HTTP_ERROR", _request.status_code)
+        else:
+            if (
+                _request.json()["errcode"]
+                and _request.json()["errcode"] in TOKEN_ERROR_CODES
+            ):
+                raise PermissionError(_request.json()["errcode"])
+            else:
+                raise Exception("API_ERROR", _request.json()["errcode"])
+
+        return _request.json()
