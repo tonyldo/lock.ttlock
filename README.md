@@ -6,7 +6,6 @@
 
 [![hacs][hacsbadge]][hacs]
 ![Project Maintenance][maintenance-shield]
-[![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
 
 [![Community Forum][forum-shield]][forum]
 
@@ -16,9 +15,8 @@ _Component to integrate with [blueprint][blueprint]._
 
 Platform | Description
 -- | --
-`binary_sensor` | Show something `True` or `False`.
-`sensor` | Show info from blueprint API.
-`switch` | Switch something `True` or `False`.
+`sensor` | Show info from ttlock API.
+`lock` | control ttlock lock devices.
 
 ![example][exampleimg]
 
