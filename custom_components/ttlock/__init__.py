@@ -15,7 +15,7 @@ import requests
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.helpers import discovery
-from homeassistant.util import Throttle
+from homeassistant.const import (CONF_SCAN_INTERVAL)
 from integrationhelper.const import CC_STARTUP_VERSION
 
 from .const import (
@@ -24,6 +24,7 @@ from .const import (
     CONF_API_GATEWAY_RESOURCE,
     CONF_API_OAUTH_RESOURCE,
     CONF_API_URI,
+    CONF_API_SCAN_INTERVAL,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_REFRESH_TOKEN,
@@ -36,8 +37,6 @@ from .const import (
     VERSION,
 )
 
-MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=30)
-
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = vol.Schema(
@@ -49,6 +48,7 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Required(CONF_ACCESS_TOKEN): cv.string,
                 vol.Required(CONF_REFRESH_TOKEN): cv.string,
                 vol.Optional(CONF_API_URI, default="https://api.ttlock.com"): cv.string,
+                vol.Optional(CONF_SCAN_INTERVAL, default=timedelta(seconds=30)): cv.time_period,
                 vol.Optional(
                     CONF_API_OAUTH_RESOURCE, default="oauth2/token"
                 ): cv.string,
@@ -90,8 +90,6 @@ async def async_setup(hass, config):
     for platform in PLATFORMS:
         discovery.load_platform(hass, component, DOMAIN, {}, config)
 
-    hass.bus.async_listen('sonoff_state', hass.data[DOMAIN].state_listener)
-
     def update_devices(event_time):
         asyncio.run_coroutine_threadsafe( hass.data[DOMAIN].async_update(), hass.loop)
     
@@ -117,13 +115,17 @@ class TTlock:
         self.api_gateway_locks_resource = config[DOMAIN].get(
             CONF_API_GATEWAY_LOCKS_RESOURCE
         )
+        self.api_gateway_resource = config[DOMAIN].get(CONF_SCAN_INTERVAL)
         self.redirect_url = f"{hass.config.api.base_url}/"
         self.full_path_token_file = f"{hass.config.path()}/custom_components/{DOMAIN}/{config[DOMAIN].get(CONF_TOKEN_FILENAME)}"
-        self.gateways = ""
-        self.locks = ""
+        self.gateways = None
+        self.locks = None
+    
+    def get_scan_interval(self):
+        return self._scan_interval
 
     async def async_update(self):
-        devices = self.update_devices()
+        self.update_devices()
         
     def update_devices(self):
         """Update data."""
@@ -131,7 +133,15 @@ class TTlock:
         try:
             self.check_token_file()
         except Exception as error:
+            _LOGGER.error(repr(error))
+            return
+        
+        try:
+            self.gateways = self.get_gateway_from_account()
+            self.locks = self.get_locks_from_gateway()
+        except Exception as error:
             _LOGGER.info(repr(error))
+            return
 
     def check_token_file(self):
         """Token validate verify."""
