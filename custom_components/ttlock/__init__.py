@@ -85,29 +85,18 @@ async def async_setup(hass, config):
     except Exception as e:
         _LOGGER.error("Erro while setup ttlock component: {}".format(e.__cause__))
         return False
-
+    
     # Load platforms
     for platform in PLATFORMS:
-        # Get platform specific configuration
-        platform_config = config[DOMAIN].get(platform, {})
+        discovery.load_platform(hass, component, DOMAIN, {}, config)
 
-        # If platform is not enabled, skip.
-        if not platform_config:
-            continue
+    hass.bus.async_listen('sonoff_state', hass.data[DOMAIN].state_listener)
 
-        for entry in platform_config:
-            entry_config = entry
+    def update_devices(event_time):
+        asyncio.run_coroutine_threadsafe( hass.data[DOMAIN].async_update(), hass.loop)
+    
+    async_track_time_interval(hass, update_devices, hass.data[DOMAIN].get_scan_interval())
 
-            hass.async_create_task(
-                discovery.async_load_platform(
-                    hass, platform, DOMAIN, entry_config, config
-                )
-            )
-    hass.async_create_task(
-        hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": config_entries.SOURCE_IMPORT}, data={}
-        )
-    )
     return True
 
 
@@ -133,7 +122,10 @@ class TTlock:
         self.gateways = ""
         self.locks = ""
 
-    async def update_data(self):
+    async def async_update(self):
+        devices = self.update_devices()
+        
+    def update_devices(self):
         """Update data."""
         # This is where the main logic to update platform data goes.
         try:
