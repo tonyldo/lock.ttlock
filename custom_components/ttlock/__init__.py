@@ -172,6 +172,7 @@ class TTlock:
 
     def get_locks_from_gateway(self):
         """list of locks"""
+        locks_= []
         for gateway in self.gateways:
             _url_request = "https://{}/{}?clientId={}&accessToken={}&gatewayId={}&date={}".format(
                 self.api_uri,
@@ -182,7 +183,7 @@ class TTlock:
                 time.time(),
             )
             _request = self.send_resources_request(_url_request)
-            self.locks = self.locks + [(gateway["gatewayId"],_request.json()["list"])]
+            _locks = _locks+[(gateway["gatewayId"],_request.json()["list"])]
 
     def send_resources_request(self, _url_request):
         try:
