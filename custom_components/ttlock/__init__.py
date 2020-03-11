@@ -131,17 +131,10 @@ class TTlock:
         """Update data."""
         # This is where the main logic to update platform data goes.
         try:
-            self.check_token_file()
-        except Exception as error:
-            _LOGGER.error(repr(error))
-            return
-        
-        try:
             self.gateways = self.get_gateway_from_account()
             self.locks = self.get_locks_from_gateway()
-        except Exception as error:
-            _LOGGER.info(repr(error))
-            return
+        except PermissionError as permission_error:
+            _LOGGER.error(repr(permission_error))
 
     def check_token_file(self):
         """Token validate verify."""
