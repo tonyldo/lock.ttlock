@@ -3,26 +3,17 @@ from homeassistant.helpers.entity import Entity
 from .const import ATTRIBUTION, DEFAULT_NAME, ICON, DOMAIN
 
 
-SONOFF_SENSORS_MAP = {
-    "lock_battery": {"eid": "battery", "uom": "%", "icon": "mdi:battery-outline"},
-    "gateway_online ": {"eid": "online", "icon": "mdi:lan-connect"},
+TTLOCK_SENSORS_MAP = {
+    "battery": {"eid": "battery", "uom": "%", "icon": "mdi:battery-outline"},
 }
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     entities = []
-    for device in hass.data[DOMAIN].get_devices(force_update=False):
-        # as far as i know only 1-switch devices seem to have sensor-like capabilities
-
-        if "params" not in device.keys():
-            continue  # this should never happen... but just in case
-
+    for device in hass.data[DOMAIN].get_locks(force_update = False):
         for sensor in SONOFF_SENSORS_MAP.keys():
-            if (
-                device["params"].get(sensor)
-                and device["params"].get(sensor) != "unavailable"
-            ):
-                entity = TTlockSensor(hass, device, sensor)
+            if device['params'].get(sensor) and device['params'].get(sensor) != "unavailable":
+                entity = SonoffSensor(hass, device, sensor)
                 entities.append(entity)
 
     if len(entities):
