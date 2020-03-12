@@ -277,7 +277,7 @@ class TTLockDevice(Entity):
 
     def get_available(self):
         lock = self.get_lock()
-        return device['rssi'] if lock else False
+        return lock['rssi'] if lock else False
 
     @property
     def should_poll(self):
