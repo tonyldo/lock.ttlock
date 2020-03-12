@@ -1,86 +1,51 @@
-"""Sensor platform for blueprint."""
+"""Sensor platform for ttlock."""
 from homeassistant.helpers.entity import Entity
 from .const import ATTRIBUTION, DEFAULT_NAME, ICON, DOMAIN
 
 
 TTLOCK_SENSORS_MAP = {
-    "battery": {"eid": "battery", "uom": "%", "icon": "mdi:battery-outline"},
+    "electricQuantity": {"eid": "battery", "uom": "%", "icon": "mdi:battery-outline"},
 }
-
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     entities = []
     for device in hass.data[DOMAIN].get_locks(force_update = False):
-        for sensor in SONOFF_SENSORS_MAP.keys():
-            if device['params'].get(sensor) and device['params'].get(sensor) != "unavailable":
-                entity = SonoffSensor(hass, device, sensor)
+        for sensor in TTLOCK_SENSORS_MAP.keys():
+            if device[sensor] :
+                entity = TTlockSensor(hass, device, sensor)
                 entities.append(entity)
 
     if len(entities):
         async_add_entities(entities, update_before_add=False)
 
+class SonoffSensor(TTlockDevice):
+    """Representation of a Sonoff sensor."""
 
-async def async_setup_entry(hass, config_entry, async_add_devices):
-    """Setup sensor platform."""
-    async_add_devices([TTlockSensor(hass, {})], True)
-
-
-class TTlockSensor(Entity):
-    """blueprint Sensor class."""
-
-    def __init__(self, hass, device, sensor=None):
-        self.hass = hass
-        self.attr = {}
-        self._state = None
-
-    async def async_update(self):
-        """Update the sensor."""
-        # Send update "signal" to the component
-        await self.hass.data[DOMAIN].update_data()
-
-        # Get new data (if any)
-        updated = self.hass.data[DOMAIN]["data"].get("data", {})
-
-        # Check the data and update the value.
-        if updated.get("static") is None:
-            self._state = self._state
-        else:
-            self._state = updated.get("static")
-
-        # Set/update attributes
-        self.attr["attribution"] = ATTRIBUTION
-        self.attr["time"] = str(updated.get("time"))
-        self.attr["none"] = updated.get("none")
+    def __init__(self, hass, lock, sensor = None):
+        """Initialize the lock."""
+        TTLockDevice.__init__(self, hass, lock)
+        self._sensor        = sensor
+        self._name          = '{} {}'.format(lock['lockName'], TTLOCK_SENSORS_MAP[self._sensor]['eid'])
+        self._attributes    = {}
 
     @property
-    def unique_id(self):
-        """Return a unique ID to use for this sensor."""
-        return ""  # Don't hard code this, use something from the device/service.
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self.unique_id)},
-            "name": self.name,
-            "manufacturer": "Blueprint",
-        }
-
-    @property
-    def name(self):
-        """Return the name of the sensor."""
-        return ""
+    def unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return SONOFF_SENSORS_MAP[self._sensor]['uom']
 
     @property
     def state(self):
-        """Return the state of the sensor."""
-        return self._state
+       """Return the state of the sensor."""
+       return self.get_lock()[self._sensor]
+
+    # entity id is required if the name use other characters not in ascii
+    @property
+    def entity_id(self):
+        """Return the unique id of the switch."""
+        entity_id = "{}.{}_{}".format(DOMAIN, self._lockid, TTLOCK_SENSORS_MAP[self._sensor]['eid'])
+        return entity_id
 
     @property
     def icon(self):
-        """Return the icon of the sensor."""
-        return ICON
-
-    @property
-    def device_state_attributes(self):
-        """Return the state attributes."""
-        return self.attr
+        """Return the icon."""
+        return TTLOCK_SENSORS_MAP[self._sensor]['icon']
