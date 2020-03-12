@@ -121,6 +121,12 @@ class TTlock:
         self.gateways = None
         self.locks = None
     
+    def get_locks(self, force_update = False):
+        if force_update:
+            return self.update_devices()
+
+        return self.locks
+    
     def get_scan_interval(self):
         return self._scan_interval
 
