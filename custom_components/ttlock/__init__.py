@@ -243,3 +243,63 @@ class TTlock:
                     raise Exception("API_ERROR", _request.json()["errcode"])
                     
         return _request.json()
+    
+    
+class TTLockDevice(Entity):
+    """Representation of a TTLock device"""
+
+    def __init__(self, hass, lock):
+        """Initialize the device."""
+
+        self._sensor = None
+        self._state = None
+        self._hass = hass
+        self._lockid = lock['lockId']
+        self._rssi = lock['rssi']
+
+        self._attributes    = {
+            'lock_id'     : self._lockid,
+        }
+
+    def get_lock(self):
+        for lock in self._hass.data[DOMAIN].get_locks():
+            if 'lockId' in lock and lock['lockId'] == self._lockid:
+                return lock
+
+        return None
+
+    def get_state(self):
+        lock = self.get_lock()
+
+        # Lock:
+        if 'electricQuantity' in lock:
+            self._attributes['electricQuantity'] = lock['electricQuantity']
+
+    def get_available(self):
+        lock = self.get_lock()
+        return device['rssi'] if lock else False
+
+    @property
+    def should_poll(self):
+        """Return the polling state."""
+        return True
+
+    @property
+    def name(self):
+        """Return the name of the switch."""
+        return self._name
+
+    @property
+    def available(self):
+        """Return true if device is online."""
+        return self.get_available()
+    
+    def update(self):
+        """Update device state."""
+        # we don't update here because there's 1 single thread that can be active at anytime
+        pass
+
+    @property
+    def device_state_attributes(self):
+        """Return device specific state attributes."""
+        return self._attributes
