@@ -4,18 +4,22 @@ Component to integrate with TTlock API.
 For more details about this component, please refer to
 https://github.com/tonyldo/lock.ttlock
 """
-import datetime
+import requests
 import json
 import logging
 import os
+import asyncio
+import datetime
+import voluptuous as vol
 from datetime import datetime, time, timedelta
 
 import homeassistant.helpers.config_validation as cv
-import requests
-import voluptuous as vol
+
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant import config_entries
 from homeassistant.helpers import discovery
-from homeassistant.const import (CONF_SCAN_INTERVAL)
+from homeassistant.const import CONF_SCAN_INTERVAL
 from integrationhelper.const import CC_STARTUP_VERSION
 
 from .const import (
@@ -23,8 +27,9 @@ from .const import (
     CONF_API_GATEWAY_LOCKS_RESOURCE,
     CONF_API_GATEWAY_RESOURCE,
     CONF_API_OAUTH_RESOURCE,
+    CONF_API_QUERY_OPEN_STATE_RESOURCE,
+    CONF_API_QUERY_LOCK_ELETRIC_QUANTITY,
     CONF_API_URI,
-    CONF_API_SCAN_INTERVAL,
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_REFRESH_TOKEN,
@@ -48,7 +53,9 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Required(CONF_ACCESS_TOKEN): cv.string,
                 vol.Required(CONF_REFRESH_TOKEN): cv.string,
                 vol.Optional(CONF_API_URI, default="https://api.ttlock.com"): cv.string,
-                vol.Optional(CONF_SCAN_INTERVAL, default=timedelta(seconds=30)): cv.time_period,
+                vol.Optional(
+                    CONF_SCAN_INTERVAL, default=timedelta(seconds=30)
+                ): cv.time_period,
                 vol.Optional(
                     CONF_API_OAUTH_RESOURCE, default="oauth2/token"
                 ): cv.string,
@@ -57,6 +64,13 @@ CONFIG_SCHEMA = vol.Schema(
                 ): cv.string,
                 vol.Optional(
                     CONF_API_GATEWAY_LOCKS_RESOURCE, default="v3/gateway/listLock"
+                ): cv.string,
+                vol.Optional(
+                    CONF_API_QUERY_OPEN_STATE_RESOURCE, default="v3/lock/queryOpenState"
+                ): cv.string,
+                vol.Optional(
+                    CONF_API_QUERY_LOCK_ELETRIC_QUANTITY,
+                    default="v3/lock/queryElectricQuantity",
                 ): cv.string,
                 vol.Optional(CONF_TOKEN_FILENAME, default="token.json"): cv.string,
             }
@@ -82,18 +96,19 @@ async def async_setup(hass, config):
     # Check the token validated
     try:
         hass.data[DOMAIN].check_token_file()
-    except Exception as e:
-        _LOGGER.error("Erro while setup ttlock component: {}".format(e.__cause__))
+    except Exception:
         return False
-    
+
     # Load platforms
     for platform in PLATFORMS:
-        discovery.load_platform(hass, component, DOMAIN, {}, config)
+        discovery.load_platform(hass, platform, DOMAIN, {}, config)
 
     def update_devices(event_time):
-        asyncio.run_coroutine_threadsafe( hass.data[DOMAIN].async_update(), hass.loop)
-    
-    async_track_time_interval(hass, update_devices, hass.data[DOMAIN].get_scan_interval())
+        asyncio.run_coroutine_threadsafe(hass.data[DOMAIN].async_update(), hass.loop)
+
+    async_track_time_interval(
+        hass, update_devices, hass.data[DOMAIN].get_scan_interval()
+    )
 
     return True
 
@@ -112,35 +127,39 @@ class TTlock:
         self.api_uri = config[DOMAIN].get(CONF_API_URI)
         self.api_oauth_resource = config[DOMAIN].get(CONF_API_OAUTH_RESOURCE)
         self.api_gateway_resource = config[DOMAIN].get(CONF_API_GATEWAY_RESOURCE)
+        self.api_query_lock_open_state_resource = config[DOMAIN].get(
+            CONF_API_QUERY_OPEN_STATE_RESOURCE
+        )
+        self.api_query_lock_eletric_quantity_resource = config[DOMAIN].get(
+            CONF_API_QUERY_LOCK_ELETRIC_QUANTITY
+        )
         self.api_gateway_locks_resource = config[DOMAIN].get(
             CONF_API_GATEWAY_LOCKS_RESOURCE
         )
-        self.api_gateway_resource = config[DOMAIN].get(CONF_SCAN_INTERVAL)
+        self._scan_interval = config[DOMAIN].get(CONF_SCAN_INTERVAL)
         self.redirect_url = f"{hass.config.api.base_url}/"
         self.full_path_token_file = f"{hass.config.path()}/custom_components/{DOMAIN}/{config[DOMAIN].get(CONF_TOKEN_FILENAME)}"
-        self.gateways = None
-        self.locks = None
-    
-    def get_locks(self, force_update = False):
+        self.gateways = []
+        self.locks = []
+
+    def get_locks(self, force_update=False):
         if force_update:
             return self.update_devices()
 
         return self.locks
-    
+
     def get_scan_interval(self):
         return self._scan_interval
 
     async def async_update(self):
         self.update_devices()
-        
+
     def update_devices(self):
         """Update data."""
         # This is where the main logic to update platform data goes.
-        try:
-            self.gateways = self.get_gateway_from_account()
-            self.locks = self.get_locks_from_gateway()
-        except PermissionError as permission_error:
-            _LOGGER.error(repr(permission_error))
+        self.gateways = self.get_gateway_from_account()
+        self.get_locks_from_gateway()
+        self.get_locks_information()
 
     def check_token_file(self):
         """Token validate verify."""
@@ -159,7 +178,7 @@ class TTlock:
             if will_expire:
                 self.refresh_access_token()
 
-    def get_gateway_from_account(self,_pageNo=1):
+    def get_gateway_from_account(self, _pageNo=1):
         """list of gateways"""
         _url_request = "https://{}/{}?client_id={}&accessToken={}&pageNo={}&pageSize=20&date={}".format(
             self.api_uri,
@@ -171,14 +190,16 @@ class TTlock:
         )
         _response = self.send_resources_request(_url_request).json()
 
-        if len(_response["list"])==0:
+        if len(_response["list"]) == 0:
             return _response["list"]
         else:
-            return _response["list"] + self.get_gateway_from_account(_pageNo=_pageNo+1)
+            return _response["list"] + self.get_gateway_from_account(
+                _pageNo=_pageNo + 1
+            )
 
     def get_locks_from_gateway(self):
         """list of locks"""
-        locks_= []
+        _locks = []
         for gateway in self.gateways:
             _url_request = "https://{}/{}?clientId={}&accessToken={}&gatewayId={}&date={}".format(
                 self.api_uri,
@@ -189,7 +210,34 @@ class TTlock:
                 time.time(),
             )
             _request = self.send_resources_request(_url_request)
-            _locks = _locks+[(gateway["gatewayId"],_request.json()["list"])]
+            _locks = _locks + [(gateway["gatewayId"], _request.json()["list"])]
+
+        self.lock = _locks
+
+    def get_locks_information(self):
+        for locks_per_gateway in self.locks:
+            for lock in locks_per_gateway[1]:
+                _url_request = "https://{}/{}?clientId={}&accessToken={}&lockId={}&date={}".format(
+                    self.api_uri,
+                    self.api_query_lock_eletric_quantity_resource,
+                    self.client_id,
+                    self.access_token,
+                    lock["lockId"],
+                    time.time(),
+                )
+                _request = self.send_resources_request(_url_request)
+                lock["electricQuantity"] = _request.json()["electricQuantity"]
+
+                _url_request = "https://{}/{}?clientId={}&accessToken={}&lockId={}&date={}".format(
+                    self.api_uri,
+                    self.api_query_lock_open_state_resource,
+                    self.client_id,
+                    self.access_token,
+                    lock["lockId"],
+                    time.time(),
+                )
+                _request = self.send_resources_request(_url_request)
+                lock["state"] = _request.json()["state"]
 
     def send_resources_request(self, _url_request):
         try:
@@ -236,15 +284,15 @@ class TTlock:
         if _request.status_code not in GOOD_HTTP_CODES:
             raise Exception("HTTP_ERROR", _request.status_code)
         else:
-            if _request.json()["errcode"]
+            if _request.json()["errcode"]:
                 if _request.json()["errcode"] in TOKEN_ERROR_CODES:
-                    raise PermissionError("API_TOKEN_ERROR",_request.json()["errcode"])
+                    raise PermissionError("API_TOKEN_ERROR", _request.json()["errcode"])
                 else:
                     raise Exception("API_ERROR", _request.json()["errcode"])
-                    
+
         return _request.json()
-    
-    
+
+
 class TTLockDevice(Entity):
     """Representation of a TTLock device"""
 
@@ -254,16 +302,16 @@ class TTLockDevice(Entity):
         self._sensor = None
         self._state = None
         self._hass = hass
-        self._lockid = lock['lockId']
-        self._rssi = lock['rssi']
+        self._lockid = lock["lockId"]
+        self._rssi = lock["rssi"]
 
-        self._attributes    = {
-            'lock_id'     : self._lockid,
+        self._attributes = {
+            "lock_id": self._lockid,
         }
 
     def get_lock(self):
         for lock in self._hass.data[DOMAIN].get_locks():
-            if 'lockId' in lock and lock['lockId'] == self._lockid:
+            if "lockId" in lock and lock["lockId"] == self._lockid:
                 return lock
 
         return None
@@ -272,12 +320,12 @@ class TTLockDevice(Entity):
         lock = self.get_lock()
 
         # Lock:
-        if 'electricQuantity' in lock:
-            self._attributes['electricQuantity'] = lock['electricQuantity']
+        if "electricQuantity" in lock:
+            self._attributes["electricQuantity"] = lock["electricQuantity"]
 
     def get_available(self):
         lock = self.get_lock()
-        return lock['rssi'] if lock else False
+        return lock["rssi"] if lock else False
 
     @property
     def should_poll(self):
@@ -285,15 +333,10 @@ class TTLockDevice(Entity):
         return True
 
     @property
-    def name(self):
-        """Return the name of the switch."""
-        return self._name
-
-    @property
     def available(self):
         """Return true if device is online."""
         return self.get_available()
-    
+
     def update(self):
         """Update device state."""
         # we don't update here because there's 1 single thread that can be active at anytime
