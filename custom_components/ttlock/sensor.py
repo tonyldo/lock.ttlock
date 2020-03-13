@@ -1,6 +1,8 @@
 """Sensor platform for ttlock."""
 from homeassistant.helpers.entity import Entity
-from .const import ATTRIBUTION, DEFAULT_NAME, ICON, DOMAIN
+from .const import ATTRIBUTION, DEFAULT_NAME, ICON
+from homeassistant.components.sensor import DOMAIN
+from custom_components.ttlock import (DOMAIN as TTLOCK_DOMAIN, SonoffDevice)
 from custom_components.ttlock import TTLockDevice
 
 
@@ -47,9 +49,7 @@ class TTLockSensor(TTLockDevice):
     @property
     def entity_id(self):
         """Return the unique id of the switch."""
-        entity_id = "{}.{}_{}".format(
-            DOMAIN, self._lockid, TTLOCK_SENSORS_MAP[self._sensor]["eid"]
-        )
+        entity_id = "{}.{}_{}_{}".format(DOMAIN, TTLOCK_DOMAIN, self._deviceid, TTLOCK_SENSORS_MAP[self._sensor]['eid'])
         return entity_id
 
     @property
