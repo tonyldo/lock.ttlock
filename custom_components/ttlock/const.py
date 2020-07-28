@@ -19,7 +19,7 @@ CONF_API_URI = "api_uri"
 CONF_API_OAUTH_RESOURCE = "api_oauth_resource"
 CONF_API_GATEWAY_RESOURCE = "api_gateway_resource"
 CONF_API_GATEWAY_LOCKS_RESOURCE = "api_gateway_locks_resource"
-CONF_API_QUERY_OPEN_STATE_RESOURCE = "api_guery_lock_open_state"
+CONF_API_QUERY_OPEN_STATE_RESOURCE = "api_query_open_state_resource"
 CONF_API_QUERY_LOCK_ELETRIC_QUANTITY = "api_query_lock_eletric_quantity"
 CONF_TOKEN_FILENAME = "token_filename"
 
