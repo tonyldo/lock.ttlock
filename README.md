@@ -2,7 +2,7 @@
 
 [![License][license-shield]](LICENSE.md)
 [![hacs][hacsbadge]][hacs]
-[![Project Stage]][project-stage-shield]
+[![Project Stage][releases-shield]]
 
 **This component will set up the following platforms.**
 
