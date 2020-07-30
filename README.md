@@ -3,7 +3,7 @@
 [![License][license-shield]](LICENSE.md)
 [![hacs][hacsbadge]][hacs]
 [![Community Forum][forum-shield]
-[![STAGE][forum-shield]][NOT READY]
+[![STAGE][stage-shield]][NOT READY]
 
 
 **This component will set up the following platforms.**
