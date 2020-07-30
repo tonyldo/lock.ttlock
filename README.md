@@ -2,7 +2,7 @@
 
 [![License][license-shield]](LICENSE.md)
 [![hacs][hacsbadge]][hacs]
-[stage-shield]
+![Project Stage][project-stage-shield]
 
 **This component will set up the following platforms.**
 
@@ -60,7 +60,7 @@ Key | Type | Required | Description
 If you want to contribute to this please read the [Contribution guidelines](CONTRIBUTING.md)
 
 ***
-[stage-shield]: https://img.shields.io/badge/stage-brightred.svg?style=for-the-badge
+[project-stage-shield]: https://img.shields.io/badge/project%20stage-development%20NOT_READY-red.svg
 [blueprint]: https://github.com/custom-components/blueprint
 [buymecoffee]: https://www.buymeacoffee.com/ludeeus
 [buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
